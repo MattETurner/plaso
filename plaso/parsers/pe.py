@@ -301,12 +301,20 @@ class PEParser(interface.FileObjectParser, dtfabric_helper.DtFabricHelper):
         message_table_resource = None
         winevt_template_resource = None
         for resource in resources.entries:
+            resource_directory = getattr(resource, "directory", None)
+            if resource_directory is None:
+                parser_mediator.ProduceWarning(
+                    "Skipping PE resource entry without a directory: "
+                    f"identifier: {resource.id!s}, name: {resource.name!s}."
+                )
+                continue
+
             if resource.name:
                 resource_name = str(resource.name)
             else:
                 resource_name = None
 
-            timestamp = getattr(resource.directory, "TimeDateStamp", None)
+            timestamp = getattr(resource_directory, "TimeDateStamp", None)
             if timestamp:
                 event_data = PEResourceEventData()
                 event_data.identifier = resource.id
@@ -459,19 +467,28 @@ class PEParser(interface.FileObjectParser, dtfabric_helper.DtFabricHelper):
               file.
           message_table_resource (pefile.ResourceDirEntryData): message table resource.
         """
-        if (
-            not message_table_resource
-            or not message_table_resource.directory
-            or not message_table_resource.directory.entries
-            or not message_table_resource.directory.entries[0].directory
-        ):
+        if not message_table_resource:
+            return
+
+        resource_directory = getattr(message_table_resource, "directory", None)
+        if resource_directory is None:
+            parser_mediator.ProduceWarning("Message table resource has no directory.")
+            return
+        if not resource_directory.entries:
+            return
+
+        language_directory = getattr(resource_directory.entries[0], "directory", None)
+        if language_directory is None:
+            parser_mediator.ProduceWarning(
+                "Message table resource has no language directory."
+            )
             return
 
         message_file_identifier = message_file.GetIdentifier()
 
         desired_language_tag = parser_mediator.GetLanguageTag().lower()
 
-        for entry in message_table_resource.directory.entries[0].directory.entries:
+        for entry in language_directory.entries:
             language_tag = languages.WindowsLanguageHelper.GetLanguageTagForLCID(
                 entry.id
             )
@@ -578,17 +595,26 @@ class PEParser(interface.FileObjectParser, dtfabric_helper.DtFabricHelper):
         Raises:
           ParseError: when the message table cannot be parsed.
         """
-        if (
-            not wevt_template_resource
-            or not wevt_template_resource.directory
-            or not wevt_template_resource.directory.entries
-            or not wevt_template_resource.directory.entries[0].directory
-        ):
+        if not wevt_template_resource:
+            return
+
+        resource_directory = getattr(wevt_template_resource, "directory", None)
+        if resource_directory is None:
+            parser_mediator.ProduceWarning("WEVT_TEMPLATE resource has no directory.")
+            return
+        if not resource_directory.entries:
+            return
+
+        language_directory = getattr(resource_directory.entries[0], "directory", None)
+        if language_directory is None:
+            parser_mediator.ProduceWarning(
+                "WEVT_TEMPLATE resource has no language directory."
+            )
             return
 
         desired_language_tag = parser_mediator.GetLanguageTag().lower()
 
-        for entry in wevt_template_resource.directory.entries[0].directory.entries:
+        for entry in language_directory.entries:
             language_tag = languages.WindowsLanguageHelper.GetLanguageTagForLCID(
                 entry.id
             )

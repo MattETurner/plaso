@@ -3,6 +3,9 @@
 
 import os
 import unittest
+from unittest import mock
+
+import pefile
 
 from dfvfs.lib import definitions as dfvfs_definitions
 from dfvfs.path import factory as path_spec_factory
@@ -18,6 +21,70 @@ class PECOFFTest(test_lib.ParserTestCase):
     """Tests for the PE file parser."""
 
     # pylint: disable=protected-access
+
+    def testParseResourceSectionWithoutDirectory(self):
+        """A leaf entry produces a warning and later resources are still parsed."""
+        parser = pe.PEParser()
+        parser_mediator = mock.Mock(extract_winevt_resources=False)
+        leaf = pefile.ResourceDirEntryData(id=10, name=None, data=object())
+        valid = pefile.ResourceDirEntryData(
+            id=11,
+            name=None,
+            directory=pefile.ResourceDirData(entries=[], TimeDateStamp=1),
+        )
+        pefile_object = mock.Mock(
+            DIRECTORY_ENTRY_RESOURCE=pefile.ResourceDirData(entries=[leaf, valid])
+        )
+
+        parser._ParseResourceSection(parser_mediator, pefile_object)
+
+        parser_mediator.ProduceWarning.assert_called_once()
+        parser_mediator.ProduceEventData.assert_called_once()
+        event_data = parser_mediator.ProduceEventData.call_args.args[0]
+        self.assertEqual(event_data.identifier, 11)
+
+    def testParseEventLogResourceWithoutDirectory(self):
+        """Missing type/name directories are reported without AttributeError."""
+        parser = pe.PEParser()
+        leaf = pefile.ResourceDirEntryData(id=1, name=None, data=object())
+        resources = (
+            leaf,
+            pefile.ResourceDirEntryData(
+                id=11, name=None, directory=pefile.ResourceDirData(entries=[leaf])
+            ),
+        )
+        for method in (
+            parser._ParseMessageTableResource,
+            parser._ParseWevtTemplateResource,
+        ):
+            for resource in resources:
+                with self.subTest(method=method.__name__, resource=resource):
+                    parser_mediator = mock.Mock()
+                    pefile_object = mock.Mock()
+
+                    method(parser_mediator, pefile_object, mock.Mock(), resource)
+
+                    parser_mediator.ProduceWarning.assert_called_once()
+                    pefile_object.get_memory_mapped_image.assert_not_called()
+
+    def testParseEmptyEventLogResources(self):
+        """Absent and empty resources retain their existing no-op behavior."""
+        parser = pe.PEParser()
+        resources = (
+            None,
+            pefile.ResourceDirEntryData(
+                id=11, name=None, directory=pefile.ResourceDirData(entries=[])
+            ),
+        )
+        for method in (
+            parser._ParseMessageTableResource,
+            parser._ParseWevtTemplateResource,
+        ):
+            for resource in resources:
+                with self.subTest(method=method.__name__, resource=resource):
+                    parser_mediator = mock.Mock()
+                    method(parser_mediator, mock.Mock(), mock.Mock(), resource)
+                    parser_mediator.ProduceWarning.assert_not_called()
 
     def testParseFileObjectOnExecutable(self):
         """Tests the ParseFileObject on a PE executable (EXE) file."""
