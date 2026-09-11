@@ -26,6 +26,90 @@ Baseline inspected: `00fcc6e7f95a002c85464f0dfd193396bd7d86d3`.
 These are code-level candidates, not measured bottlenecks. Preserve the parser
 API, CLI and storage compatibility through small, independently measured changes.
 
+## First benchmark target: M4 MacBook Air, 24 GB
+
+User-reported target: **M4 MacBook Air, 24 GB unified memory, macOS 26.6.2
+(25G83)**. Record the actual OS/build with `sw_vers` in each benchmark; this is a
+target configuration, not a tested compatibility claim. Screen size, GPU core
+count and SSD configuration have not been specified. Discover GPU capabilities
+on the device before selecting a Metal workload.
+
+Apple lists the M4 Air CPU as 10 cores (4 performance, 6 efficiency). Four worker
+processes do not imply affinity to the four performance cores: macOS schedules
+them. [Apple specifications](https://support.apple.com/en-us/122209).
+
+| Setting | Initial experiment |
+| --- | --- |
+| Starting worker count | Explicit `--workers 4`; a hypothesis, not a new default |
+| Worker sweep | 1, 2, 4 and 6 workers; compare against automatic selection later |
+| Per-worker memory limit | Keep the existing 2 GiB limit (`2147483648` bytes) |
+| Whole-machine memory | Observe aggregate process memory, Memory Pressure and swap growth; reduce workers if pressure rises |
+| Power/thermal conditions | Keep power source and Low Power Mode consistent; compare repeated, sustained runs |
+| GPU | CPU baseline first; no Metal backend exists in this branch |
+
+At four workers, the sum of the per-worker limits is 8 GiB; at six it is 12 GiB.
+Those are neither reservations nor a hard total cap: monitoring is periodic and
+the main process, libraries, filesystem cache, macOS and other applications need
+memory too. Avoid starting with the automatic nine-worker selection on this
+10-core CPU before measuring its effect on the 24 GB machine.
+
+The benchmark below runs **12 complete extractions** and keeps all outputs.
+First use the tiny fixture to verify the procedure. For performance measurements,
+replace it with a representative, fixed evidence file and ensure sufficient free
+disk space. Run from the repository root in the validated native environment.
+This block is intended for `bash` and creates a new output directory each time.
+
+```bash
+set -eu
+plaso_source="$PWD/test_data/syslog.tgz"
+test -f "$plaso_source"
+plaso_results=$(mktemp -d "$PWD/benchmark-m4.XXXXXX")
+sw_vers > "$plaso_results/macos.txt"
+sysctl machdep.cpu.brand_string hw.memsize hw.ncpu > "$plaso_results/hardware.txt"
+pmset -g custom > "$plaso_results/power-settings.txt"
+git rev-parse HEAD > "$plaso_results/commit.txt"
+git status --short > "$plaso_results/worktree.txt"
+python -m pip freeze > "$plaso_results/dependencies.txt"
+python utils/check_macos_native.py > "$plaso_results/architecture.json"
+python utils/check_dependencies.py > "$plaso_results/dependency-check.txt"
+shasum -a 256 "$plaso_source" > "$plaso_results/source.sha256"
+
+plaso_repeat=0
+for plaso_order in "2 4 6 1" "4 6 1 2" "6 1 2 4"; do
+  plaso_repeat=$((plaso_repeat + 1))
+  for plaso_workers in $plaso_order; do
+    plaso_run="$plaso_results/r${plaso_repeat}-w${plaso_workers}"
+    mkdir "$plaso_run"
+    sysctl vm.swapusage > "$plaso_run/swap-before.txt"
+    if /usr/bin/time -l python -m plaso.scripts.log2timeline \
+      --workers "$plaso_workers" \
+      --worker-memory-limit 2147483648 \
+      --storage-file "$plaso_run/timeline.plaso" "$plaso_source" \
+      > "$plaso_run/stdout.log" 2> "$plaso_run/time-and-stderr.log"; then
+      printf '0\n' > "$plaso_run/exit-status.txt"
+    else
+      plaso_status=$?
+      printf '%s\n' "$plaso_status" > "$plaso_run/exit-status.txt"
+      printf 'Extraction failed; inspect %s\n' "$plaso_run" >&2
+      exit "$plaso_status"
+    fi
+    sysctl vm.swapusage > "$plaso_run/swap-after.txt"
+  done
+done
+printf 'Results: %s\n' "$plaso_results"
+```
+
+The sweep is unprofiled to reduce measurement overhead and rotates order to
+reduce order bias; it does not eliminate thermal or cache effects. Source hashing
+also warms the cache. Label these as cache-uncontrolled runs, not cold-cache
+measurements. Record background activity and Memory Pressure during each run;
+before/after swap snapshots do not reveal peak memory or prove that no swapping
+occurred. Repeat the most promising setting with the profilers below to identify
+hot paths. Check semantic output parity before treating a faster run as a win.
+
+Native CI validates the runner's configuration, not this particular M4/macOS
+build. No benchmark has yet been run on the user's Mac.
+
 ## Native validation
 
 Follow the [macOS installation guide](../user/MacOS-Source-Release.md). The
