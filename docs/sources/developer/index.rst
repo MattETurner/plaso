@@ -8,6 +8,7 @@ Developer documentation
    Developers Guide <Developers-Guide>
    Style guide <Style-guide>
    Testing <Testing>
+   Apple Silicon modernization <Apple-Silicon>
    How to write a parser or (parser) plugin <How-to-write-a-parser>
    How to write an analysis plugin <How-to-write-an-analysis-plugin>
    How to write an output module <How-to-write-an-output-module>

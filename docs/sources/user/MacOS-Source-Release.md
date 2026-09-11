@@ -1,169 +1,84 @@
-# MacOS Source release
+# Native macOS source installation
 
-**WARNING: these instructions assume you are comfortable troubleshooting Python
-module installation issues. If not we strongly encourage using the Docker
-installation instead.**
+Use an isolated Python environment. This fork targets native Apple Silicon
+(`arm64`) first. These are development installation instructions; successful
+native dependency checks and tests must establish compatibility. Not every
+required library necessarily has a prebuilt macOS wheel.
 
-To install the "Source code" release of Plaso on Mac OS you need to download the
-latest version from https://github.com/log2timeline/plaso/releases/latest
+## Prerequisites
 
-For the purposes of this guide it will use 20200430 to represent the latest
-Plaso release in the examples below. However, you will need to adjust this
-based on the latest version available from the link above.
+Install Xcode Command Line Tools:
 
-Under the latest release you should see four links to different packages, you
-will need to download the "**Source code (tar.gz)**" package file, for example
-https://github.com/log2timeline/plaso/archive/20200430.tar.gz
-
-Extract the source code:
-
-```
-cd /tmp
-tar zxf ~/Downloads/plaso-20200430.tar.gz
-```
-
-In some cases, Mac OS will automatically ungzip the downloaded file. In which
-case, untar with:
-
-```
-cd /tmp
-tar xf ~/Downloads/plaso-20200430.tar
-```
-
-XCode Command Line Tools is required. It can be installed with:
-
-```
+```bash
 xcode-select --install
 ```
 
-If python3 is not already installed, it can be downloaded from
-https://www.python.org/downloads/
+Use a native installation of [Homebrew](https://docs.brew.sh/Installation).
+Its standard Apple Silicon prefix is `/opt/homebrew`; `/usr/local` is the
+standard Intel prefix. Run the terminal without Rosetta, then install tools
+and the Python version selected by this fork's macOS CI:
 
-## Install Plaso contained within a virtual environment
-
-Plaso can be installed within a virtual environment so that dependency packages
-are not installed system-wide. To do this, install Virtualenv:
-
-```
-sudo pip3 install virtualenv
+```bash
+brew install python@3.14 gettext gnu-sed pkg-config
+python3.14 -c 'import platform, sys; print(sys.executable, platform.machine()); assert platform.machine() == "arm64"'
 ```
 
-Create a virtual environment to install Plaso into (in this instance, it is
-named "plaso_env" created under the home directory):
+If Python is Intel-only, correct PATH or the Python installation first. Create
+a new virtual environment rather than reusing compiled Intel dependencies.
 
-```
-virtualenv -p python3 ~/plaso_env
-```
+## Install the checkout
 
-Activate the virtual environment:
+Clone the fork and select the branch or release you intend to use. From its root:
 
-```
-source ~/plaso_env/bin/activate
-```
-
-Install the Plaso dependencies:
-
-```
-cd /tmp/plaso-20200430/
-pip install -r requirements.txt
+```bash
+python3.14 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --pre -e .
+python utils/check_macos_native.py
+python utils/check_dependencies.py
+python run_tests.py
 ```
 
-Install Plaso:
+Dependencies come from `pyproject.toml`. `--pre` matches this repository's
+existing development tox configuration. For reproducible casework, validate a
+specific checkout and retain resolved versions and wheel files. Building libyal
+bindings and pytsk3 can take considerable time when compatible wheels are
+unavailable. Diagnose dependency installation failures before proceeding.
 
-```
-python setup.py build
-python setup.py install
-```
+Installed commands are `log2timeline`, `psort`, `pinfo`, `psteal`, and
+`image_export`, without a `.py` suffix. For example:
 
-To deactivate the virtual environment:
-
-```
-deactivate
-```
-
-*In order to run Plaso, the virtual environment needs to be activated.*
-
-## Install Plaso system-wide
-
-**We strongly discourage installing Plaso system-wide with pip. If you aren't
-comfortable debugging package installation, this is not for you.**
-
-Install the Plaso dependencies:
-
-```
-cd /tmp/plaso-20200430/
-sudo pip3 install -r requirements.txt
+```bash
+log2timeline --help
+python -m pip freeze > installed-dependencies.txt
 ```
 
-Install Plaso:
+Run `deactivate` to leave the environment; activate it again before using Plaso.
+The project supports Python >=3.10; the dedicated native CI environment selects
+3.14. Other combinations require validation.
 
-```
-python3 setup.py build
-sudo python3 setup.py install
-```
+## Architecture audit scope
 
-## Troubleshooting
+`check_macos_native.py` fails outside native macOS arm64 Python. It checks the
+interpreter, `.so` extensions and bundled `.dylib` files in the active installation's
+package directories and standard-library extension directory. Universal2 binaries
+pass when they contain an arm64 slice; inspection errors fail the audit. Use a
+dedicated environment because unrelated installed packages are also checked.
 
-Some Python dependencies fail to compile with the error:
+This is an architecture inventory, not a complete dynamic-loader audit. It does
+not follow directory symlinks, editable packages outside those directories, or
+transitive libraries outside the environment. Dependency imports and parser tests
+remain necessary. Inspect linkage errors with `otool -L` on the affected extension
+and `lipo -archs` on the referenced libraries.
 
-```
-  clang: warning: no such sysroot directory: '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.14.sdk' [-Wmissing-sysroot]
-  ...
-  #include <stdio.h>
-           ^~~~~~~~~
-  1 error generated.
-  error: command 'clang' failed with exit status 1
-```
+## Source-build troubleshooting
 
-It is likely that the Python interpreter was built using a specific Mac OS SDK.
-Make sure that version of the Mac OS SDK is installed on your system, in the
-example above this is Mac OS SDK 10.14.
+Check `xcode-select -p` and `xcrun --show-sdk-path` for an available SDK. When a
+specific dependency needs an external library, install it natively and derive
+paths using `brew --prefix <formula>` instead of copying Intel include/library
+paths. Avoid global `-mcpu=native` flags for distributable wheels: they can narrow
+hardware compatibility. Retain the first failing package's build log.
 
-Pycrypto fails to build with the error:
-
-```
-    src/_fastmath.c:36:11: fatal error: 'gmp.h' file not found
-    # include <gmp.h>
-              ^~~~~~~
-    1 error generated.
-    error: command 'clang' failed with exit status 1
-    ----------------------------------------
-```
-
-Make sure you have gmp installed:
-
-```
-brew install gmp
-```
-
-And your build environment knows where to find its development files:
-
-```
-export CFLAGS="-I/usr/local/include ${CFLAGS}";
-export LDFLAGS="-L/usr/local/lib ${LDFLAGS}";
-```
-
-Yara-python fails to build with the error:
-
-```
-    In file included from yara/libyara/libyara.c:45:
-    yara/libyara/crypto.h:38:10: fatal error: 'openssl/crypto.h' file not found
-    #include <openssl/crypto.h>
-             ^~~~~~~~~~~~~~~~~~
-    1 error generated.
-    error: command 'clang' failed with exit status 1
-    ----------------------------------------
-```
-
-Make sure you have openssl installed:
-
-```
-brew install openssl
-```
-
-And your build environment knows where to find its development files:
-
-```
-export CFLAGS="-I/usr/local/opt/openssl@1.1/include ${CFLAGS}";
-export LDFLAGS="-L/usr/local/opt/openssl@1.1/lib ${LDFLAGS}";
-```
+See the [Apple Silicon development plan](../developer/Apple-Silicon.md) for
+profiling, correctness validation and proposed Metal work.

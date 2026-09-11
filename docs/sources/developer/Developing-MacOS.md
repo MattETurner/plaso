@@ -1,5 +1,9 @@
 # Developing on MacOS
 
+For native M-series development, follow the
+[Apple Silicon plan](Apple-Silicon.md), including the architecture audit and
+dedicated `macos-arm64` tox environment.
+
 ## XCode
 
 First install XCode

@@ -1,7 +1,8 @@
 # Run tests on Mac OS.
 name: test_macos
 on: [push, pull_request]
-permissions: read-all
+permissions:
+  contents: read
 jobs:
   test_macos:
     runs-on: ${{ matrix.os }}
@@ -10,14 +11,20 @@ jobs:
         include:
         - os: macos-26
           python-version: '3.14'
-          toxenv: 'py314'
+          toxenv: 'macos-arm64'
     steps:
     - uses: actions/checkout@v6
     - name: Install dependencies
       run: |
         brew update -q
-        brew install -q gettext gnu-sed python@${{ matrix.python-version }} tox || true
+        brew install -q gettext gnu-sed pkg-config python@${{ matrix.python-version }} tox
         brew link --force gettext
+    - name: Verify native Python before dependency builds
+      run: |
+        python${{ matrix.python-version }} -c 'import platform, sys; assert sys.platform == "darwin" and platform.machine() == "arm64", "Native macOS arm64 Python required"'
+    - name: Test architecture audit utility
+      run: |
+        python${{ matrix.python-version }} -m unittest tests.utils.check_macos_native
     - name: Run tests
       run: |
         tox -e ${{ matrix.toxenv }}
