@@ -108,7 +108,66 @@ occurred. Repeat the most promising setting with the profilers below to identify
 hot paths. Check semantic output parity before treating a faster run as a win.
 
 Native CI validates the runner's configuration, not this particular M4/macOS
-build. No benchmark has yet been run on the user's Mac.
+build. The first user-reported on-device baseline is recorded below.
+
+## First E01 baseline: four workers
+
+User-reported result on the M4 Air / 24 GB target, using
+`base-wkstn-01-c-drive.E01` from SRL-2018. This is one unprofiled run, not a
+speedup comparison. The CLI reported version `20260720`. The user was instructed
+to apply the RSS fallback from commit `d412f3a`; nonzero memory readings confirm
+the expected behavior, but the exact checkout, dependency manifest and source
+hash were not supplied with these results.
+
+| Measurement | Reported value |
+| --- | --- |
+| Workers / configured per-worker limit | 4 / 2 GiB |
+| Plaso processing time | 01:04:34 (3,874 seconds) |
+| External wall time | 3,910.62 seconds (01:05:10.62) |
+| User / system CPU time | 15,782.48 / 1,951.18 seconds |
+| Tasks / main source count | 906,629 / 906,629 |
+| Main event-data count | 9,159,738 |
+| Queued / processing / merging / abandoned at completion | 0 / 0 / 0 / 0 |
+| Extraction warnings | 10,889; contents not yet reviewed |
+| Final main RSS | 620.8 MiB |
+| Final worker RSS | 459.8, 464.9, 575.2, 508.9 MiB |
+| External time maximum resident set size | 1,170,620,416 bytes (~1.09 GiB) |
+| External time peak memory footprint | 748,733,496 bytes |
+| External time page faults / swaps | 233 / 0 |
+
+Derived rates: approximately 2,342 **event-data records** per wall-clock second,
+and 4.53 CPU-seconds per wall-clock second. Event-data records are not identical
+to timestamped event counts. CPU time does not establish an equivalent fraction
+of the chip's maximum performance, since core capabilities and workload vary.
+
+The final displayed RSS values sum to 2,629.6 MiB (~2.57 GiB), including possible
+shared-page double counting. Final RSS is not peak aggregate RSS. The external
+time maximum RSS is also not a simultaneous total of all five processes, and
+its zero swaps field does not prove absence of system-wide swapping. An earlier
+screenshot showed 8.54 GB of system swap in use; attribution and growth during
+the run were not measured.
+
+The output explicitly shows both VSS1 and VSS2 paths. Keep the same snapshot,
+parser and hashing scope in every comparison. Omitting snapshots would change
+evidence coverage and cannot be reported as an equivalent-workload speedup.
+
+Successful completion and no abandoned tasks establish that this run finished;
+they do not explain the 10,889 extraction warnings or prove complete parsing.
+First inspect the default pinfo summary, which prints warning counts without
+listing every warning message. In the same shell used for the baseline:
+
+```bash
+python -m plaso.scripts.pinfo "$plaso_run/timeline.plaso" \
+  > "$plaso_run/summary.txt"
+```
+
+Review the warning counts by parser and the affected paths, then sample messages
+from the dominant warning categories. Avoid `--sections warnings` for the initial
+summary because it requests every warning's details. Preserve the baseline store
+for semantic comparisons. Next, use a separate profiling run with four workers
+to distinguish parsing, serialization, storage and merging costs before choosing
+a code optimization or a higher worker count. Profiling timings must be labeled
+separately because instrumentation adds overhead.
 
 ## Memory accounting and the smoke-test warning
 
