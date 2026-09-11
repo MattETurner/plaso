@@ -31,8 +31,8 @@ class WorkersArgumentsHelper(interface.ArgumentsHelper):
             type=int,
             metavar="SIZE",
             help=(
-                "Maximum amount of memory (data segment and shared memory) "
-                "a worker process is allowed to consume in bytes, where 0 "
+                "Maximum worker memory in bytes (data segment plus shared memory "
+                "where available, otherwise resident memory), where 0 "
                 "represents no limit. The default limit is 2147483648 (2 GiB). "
                 "If a worker process exceeds this limit it is killed by the main "
                 "(foreman) process."

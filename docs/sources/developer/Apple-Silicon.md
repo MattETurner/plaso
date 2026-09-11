@@ -110,6 +110,30 @@ hot paths. Check semantic output parity before treating a faster run as a win.
 Native CI validates the runner's configuration, not this particular M4/macOS
 build. No benchmark has yet been run on the user's Mac.
 
+## Memory accounting and the smoke-test warning
+
+The bundled `test_data/syslog.tgz` contains a malformed month (`MMM`), which
+explains the `Invalid month: None` extraction warning in the reported smoke run.
+That run completed with 13 event-data records and no abandoned tasks.
+
+The separate CLI warning about failing to set `4294967296` bytes concerns the
+default 4 GiB `RLIMIT_DATA` limit. It means that limit was not installed; it does
+not mean the process used 4 GiB or ran out of RAM. This change leaves that warning
+visible and does not claim to implement a macOS hard allocation limit.
+
+The process-memory monitor previously summed `data` and `shared`, defaulting
+missing fields to zero. macOS psutil reports RSS but not those fields, so this
+could display `0 B` and prevent the periodic worker memory-limit check from
+triggering. The monitor now uses RSS when either field is absent and preserves
+data-plus-shared accounting where both exist. See
+[psutil memory_info](https://psutil.io/api/#psutil.Process.memory_info).
+
+RSS measures resident pages, not a total allocation cap or Apple's complete
+physical-footprint metric. Shared pages can be counted in multiple processes.
+The 2 GiB per-worker check remains periodic; it can overshoot between samples,
+and does not cap the main process or combined CPU/GPU memory. This fix requires
+on-device validation before using memory measurements for tuning.
+
 ## Native validation
 
 Follow the [macOS installation guide](../user/MacOS-Source-Release.md). The

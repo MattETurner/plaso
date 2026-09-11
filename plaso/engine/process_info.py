@@ -21,7 +21,7 @@ class ProcessInfo:
         self._process = psutil.Process(pid)
 
     def GetUsedMemory(self):
-        """Retrieves the amount of memory used by the process.
+        """Retrieves data plus shared memory, or resident memory when unavailable.
 
         Returns:
           int: amount of memory in bytes used by the process or None
@@ -32,9 +32,10 @@ class ProcessInfo:
         except psutil.NoSuchProcess:
             return None
 
-        # Psutil will return different memory information depending on what is
-        # available in that platform.
-        memory_data = getattr(memory_info, "data", 0)
-        memory_shared = getattr(memory_info, "shared", 0)
+        # Preserve data + shared accounting where both fields are available.
+        # macOS and Windows do not provide these fields. Returning zero there
+        # would also disable the engine's periodic worker memory-limit check.
+        if hasattr(memory_info, "data") and hasattr(memory_info, "shared"):
+            return memory_info.data + memory_info.shared
 
-        return memory_data + memory_shared
+        return memory_info.rss
