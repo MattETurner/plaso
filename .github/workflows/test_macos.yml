@@ -22,9 +22,9 @@ jobs:
     - name: Verify native Python before dependency builds
       run: |
         python${{ matrix.python-version }} -c 'import platform, sys; assert sys.platform == "darwin" and platform.machine() == "arm64", "Native macOS arm64 Python required"'
-    - name: Test architecture audit utility
+    - name: Test architecture audit and test discovery
       run: |
-        python${{ matrix.python-version }} -m unittest tests.utils.check_macos_native
+        python${{ matrix.python-version }} -m unittest tests.utils.check_macos_native tests.test_discovery
     - name: Run tests
       run: |
         tox -e ${{ matrix.toxenv }}
